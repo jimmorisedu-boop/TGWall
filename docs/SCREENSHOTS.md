@@ -4,7 +4,7 @@
 
 | Файл | Метод в `DesignScreenshotTest` | Данные |
 | --- | --- | --- |
-| `images/feed-portrait.png` | `capturesPortraitFeed` | Шесть вымышленных отправителей и сообщений |
+| `images/feed-portrait.png` | `capturesPortraitFeed` | Шесть вымышленных сообщений: релиз, созвоны и семейный техсовет |
 | `images/feed-landscape.png` | `capturesLandscapeFeedInChronologicalSingleColumn` | Те же вымышленные сообщения, одна колонка |
 | `images/media-portrait.png` | `capturesPhotoAndVideoPreviewInDarkPanel` | Вымышленное оповещение и публичная фотография CC0 |
 | `images/video-unavailable.png` | `capturesVideoWithoutPreview` | Искусственное уведомление без видеопревью |
@@ -17,7 +17,7 @@
 
 Результаты создаются в `outputs/screenshots/`. Для публикации используются только четыре указанных файла: `portrait.png`, `landscape.png`, `dark-media-portrait.png` и `dark-video-unavailable.png`, скопированные в `docs/images/` под именами из таблицы.
 
-Имена, тексты и названия чатов задаются тестовыми фикстурами; время берётся из часов тестовой среды. Тесты работают с изолированным хранилищем Robolectric и не подключаются к телефону или аккаунту Telegram. Демонстрационные данные и тестовые медиа не включаются в APK.
+Имена, саркастичные диалоги и названия чатов написаны специально для демонстрации. Время публичных снимков зафиксировано в тестовой фикстуре. Тесты работают с изолированным хранилищем Robolectric и не подключаются к телефону или аккаунту Telegram. Демонстрационные данные и тестовые медиа не включаются в APK.
 
 Фотография озера и горы Фудзи — работа lumoplank под CC0, полученная через тестовые материалы Stageshow. [Источник и сведения о лицензии](../THIRD_PARTY_NOTICES.md).
 

@@ -35,6 +35,8 @@ import java.util.List;
 @Config(sdk = 33, qualifiers = "w390dp-h844dp-port-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class DesignScreenshotTest {
+    // Public screenshots use fictional conversations, never data captured from a phone.
+    private static final long DEMO_TIME = java.time.Instant.parse("2026-01-01T12:30:00Z").toEpochMilli();
     private Context context;
 
     @Before public void reset() {
@@ -48,7 +50,7 @@ public class DesignScreenshotTest {
         fixture();
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
             capture(controller.get(), "portrait", 390, 844);
-            assertNotNull(findText(content(controller.get()), "Анна Смирнова"));
+            assertNotNull(findText(content(controller.get()), "Оля"));
             assertNotNull(findText(content(controller.get()), "Сообщения"));
             assertNotNull(findText(content(controller.get()), "Новые сверху"));
             assertNull(findText(content(controller.get()), "Telegram подключён"));
@@ -87,8 +89,8 @@ public class DesignScreenshotTest {
             capture(controller.get(), "landscape", 844, 390);
             GridView grid = TestUi.grid(controller.get());
             assertEquals(1, grid.getNumColumns());
-            assertEquals("Анна Смирнова", ((FeedItem) grid.getAdapter().getItem(0)).sender);
-            assertEquals("Михаил", ((FeedItem) grid.getAdapter().getItem(1)).sender);
+            assertEquals("Оля", ((FeedItem) grid.getAdapter().getItem(0)).sender);
+            assertEquals("Паша", ((FeedItem) grid.getAdapter().getItem(1)).sender);
             View header = ((ViewGroup) content(controller.get())).getChildAt(2);
             assertTrue("Feed must start below the toolbar", grid.getTop() >= header.getBottom());
         }
@@ -194,8 +196,8 @@ public class DesignScreenshotTest {
         fixture();
         FeedStore.clear(context);
         List<FeedItem> items = new ArrayList<>();
-        items.add(new FeedItem("video-not-provided", "Система наблюдения", "Оповещения", "📹 Видеозапись события",
-                System.currentTimeMillis(), "video", "", "unavailable"));
+        items.add(new FeedItem("video-not-provided", "Бот дедлайнов", "Релиз без паники", "📹 Запись продуктивного созвона. Улик не осталось.",
+                DEMO_TIME, "video", "", "unavailable"));
         FeedStore.add(context, items);
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
             capture(controller.get(), "dark-video-unavailable", 390, 844);
@@ -212,11 +214,11 @@ public class DesignScreenshotTest {
         }
         String file = MediaCache.copy(context, "sample-notification-photo", null, "image/jpeg", picture);
         picture.recycle();
-        long now = System.currentTimeMillis();
+        long now = DEMO_TIME;
         List<FeedItem> items = new ArrayList<>();
-        items.add(new FeedItem("photo-preview", "Камера у озера", "Оповещения", "Новый кадр с камеры", now,
+        items.add(new FeedItem("photo-preview", "Кот Иннокентий", "Клуб диванных экспертов", "Съездил отдохнуть. Горы на созвон не вышли.", now,
                 "image", file, "ready"));
-        items.add(new FeedItem("video-preview", "Камера у озера", "Оповещения", "📹 Обнаружено движение", now - 120000,
+        items.add(new FeedItem("video-preview", "Кот Иннокентий", "Клуб диванных экспертов", "📹 Озеро. Ни одного срочного поручения.", now - 120000,
                 "video", file, "ready"));
         FeedStore.add(context, items);
     }
@@ -224,14 +226,14 @@ public class DesignScreenshotTest {
     private void fixture() {
         Settings.Secure.putString(context.getContentResolver(), "enabled_notification_listeners",
                 new ComponentName(context, TelegramNotificationListener.class).flattenToShortString());
-        long now = System.currentTimeMillis();
+        long now = DEMO_TIME;
         String[][] messages = {
-                {"Анна Смирнова", "Команда проекта", "Новый макет готов. Посмотрите, как теперь выглядит главная 👀"},
-                {"Михаил", "Дизайн и продукт", "Давайте оставим больше воздуха. Самое важное — сами сообщения."},
-                {"Екатерина", "Встреча в субботу", "Встречаемся в 12:30. Я забронировала столик у окна."},
-                {"Алексей Петров", "Команда проекта", "Сборка прошла. Можно проверять на телефоне."},
-                {"Мария", "Книжный клуб", "Дочитала. Очень хочется обсудить последнюю главу."},
-                {"Иван", "Telegram", "Спасибо! Всё получилось."}
+                {"Оля", "Релиз без паники", "Пуши приходят сами. Хоть кто-то в проекте работает."},
+                {"Паша", "Релиз без паники", "Всё настроил. Теперь героически смотрю на экран."},
+                {"Нина", "Созвон о созвоне", "Отменила созвон. Команда впервые успела поработать."},
+                {"Борис", "Созвон о созвоне", "Нужен созвон. Обсудим, почему не успеваем."},
+                {"Мама", "Семейный техсовет", "Перезагрузила. Роутер ожил, я пока нет."},
+                {"Костя", "Семейный техсовет", "Мам, перезагрузи роутер. Ему тоже нужен отпуск."}
         };
         List<FeedItem> items = new ArrayList<>();
         for (int i = 0; i < messages.length; i++) {
