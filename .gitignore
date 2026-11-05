@@ -1,0 +1,23 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+.DS_Store
+*.iml
+
+# Local diagnostics, device data, and signing material stay private.
+.agents/
+skills-lock.json
+/outputs/
+/REHEARSAL.md
+captures/
+*.log
+*.apk
+*.aab
+*.zip
+*.jks
+*.keystore
+*.key
+*.pem
+.env
+.env.*

@@ -1,0 +1,33 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'ru.telegramwall.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'ru.telegramwall.app'
+        minSdk 24
+        targetSdk 36
+        versionCode 7
+        versionName '1.2.3'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            systemProperty 'telegramwall.screenshotDir', rootProject.file('outputs/screenshots').absolutePath
+        }
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+}
