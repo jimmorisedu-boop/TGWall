@@ -12,13 +12,19 @@ final class FeedItem {
     final String mediaKind;
     final String mediaFile;
     final String mediaState;
+    final String avatarFile;
 
     FeedItem(String id, String sender, String chat, String message, long time) {
-        this(id, sender, chat, message, time, "", "", "");
+        this(id, sender, chat, message, time, "", "", "", "");
     }
 
     FeedItem(String id, String sender, String chat, String message, long time,
              String mediaKind, String mediaFile, String mediaState) {
+        this(id, sender, chat, message, time, mediaKind, mediaFile, mediaState, "");
+    }
+
+    FeedItem(String id, String sender, String chat, String message, long time,
+             String mediaKind, String mediaFile, String mediaState, String avatarFile) {
         this.id = id;
         this.sender = sender == null || sender.trim().isEmpty() ? "Telegram" : sender.trim();
         this.chat = chat == null || chat.trim().isEmpty() ? "Telegram" : chat.trim();
@@ -27,6 +33,7 @@ final class FeedItem {
         this.mediaKind = mediaKind == null ? "" : mediaKind;
         this.mediaFile = mediaFile == null ? "" : mediaFile;
         this.mediaState = mediaState == null ? "" : mediaState;
+        this.avatarFile = avatarFile == null ? "" : avatarFile;
     }
 
     boolean isPreview() { return id.startsWith("preview:"); }
@@ -41,6 +48,7 @@ final class FeedItem {
         object.put("mediaKind", mediaKind);
         object.put("mediaFile", mediaFile);
         object.put("mediaState", mediaState);
+        object.put("avatarFile", avatarFile);
         return object;
     }
 
@@ -53,7 +61,8 @@ final class FeedItem {
                 object.optLong("time"),
                 object.optString("mediaKind"),
                 object.optString("mediaFile"),
-                object.optString("mediaState")
+                object.optString("mediaState"),
+                object.optString("avatarFile")
         );
     }
 }

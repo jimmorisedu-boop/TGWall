@@ -19,14 +19,20 @@ final class PanelMediaView extends FrameLayout {
     private final FeedItem item;
     private final ImageView image;
     private final TextView status;
+    private final boolean compact;
     private Bitmap bitmap;
     private VideoView video;
     private boolean videoFailed;
     private float aspect = 16f / 9f;
 
     PanelMediaView(Context context, FeedItem item) {
+        this(context, item, false);
+    }
+
+    PanelMediaView(Context context, FeedItem item, boolean compact) {
         super(context);
         this.item = item;
+        this.compact = compact;
         GradientDrawable background = new GradientDrawable();
         background.setColor(0xFF0D151E);
         background.setCornerRadius(dp(12));
@@ -38,10 +44,10 @@ final class PanelMediaView extends FrameLayout {
         addView(image, new LayoutParams(-1, -1));
         status = new TextView(context);
         status.setTextColor(0xFFA3B3C2);
-        status.setTextSize(13);
+        status.setTextSize(compact ? 8 : 13);
         status.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         status.setGravity(Gravity.CENTER);
-        status.setPadding(dp(12), dp(12), dp(12), dp(12));
+        status.setPadding(dp(compact ? 2 : 12), dp(compact ? 2 : 12), dp(compact ? 2 : 12), dp(compact ? 2 : 12));
         status.setText("ready".equals(item.mediaState) && MediaCache.file(context, item.mediaFile) == null
                 ? "Вложение больше не хранится на устройстве"
                 : item.mediaFile.endsWith(".video") ? "Видео загружается…"
@@ -60,6 +66,12 @@ final class PanelMediaView extends FrameLayout {
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         int width = MeasureSpec.getSize(widthSpec);
+        if (compact) {
+            int compactHeight = Math.max(dp(35), Math.min(dp(40), MeasureSpec.getSize(heightSpec)));
+            super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(compactHeight, MeasureSpec.EXACTLY));
+            return;
+        }
         boolean available = MediaCache.file(getContext(), item.mediaFile) != null;
         android.content.res.Configuration config = getResources().getConfiguration();
         boolean landscape = config.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;

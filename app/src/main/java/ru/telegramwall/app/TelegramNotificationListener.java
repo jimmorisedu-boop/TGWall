@@ -18,7 +18,8 @@ import java.util.concurrent.*;
 
 public class TelegramNotificationListener extends NotificationListenerService {
     static final String ACTION_FEED_CHANGED = "ru.telegramwall.app.FEED_CHANGED";
-    private final Set<String> pending = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingMedia = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingAvatars = ConcurrentHashMap.newKeySet();
     private final ExecutorService mediaExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "notification-media");
         thread.setDaemon(true);
@@ -50,7 +51,7 @@ public class TelegramNotificationListener extends NotificationListenerService {
     private void settleStaleLoads(boolean stopping) {
         boolean changed = false;
         for (FeedItem item : FeedStore.read(this)) {
-            if ("loading".equals(item.mediaState) && (stopping || !pending.contains(item.id))) {
+            if ("loading".equals(item.mediaState) && (stopping || !pendingMedia.contains(item.id))) {
                 changed |= FeedStore.updateMedia(this, item.id, item.mediaKind, "", "unavailable");
             }
         }
@@ -89,6 +90,10 @@ public class TelegramNotificationListener extends NotificationListenerService {
         long postedAt = sbn.getPostTime();
         List<FeedItem> items = new ArrayList<>();
         List<Attachment> attachments = new ArrayList<>();
+        List<AvatarAttachment> avatars = new ArrayList<>();
+        Set<String> messageSenders = new HashSet<>();
+        boolean allMessagesHavePersonalSender = true;
+        boolean messagingParseFailed = false;
 
         try {
             Parcelable[] rawMessages = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
@@ -106,11 +111,30 @@ public class TelegramNotificationListener extends NotificationListenerService {
                     if (body.isEmpty() && (!supported || uri == null)) continue;
                     if (body.isEmpty()) body = "video".equals(kind) ? "Видео" : "Фото";
                     String sender = value(message.getCharSequence("sender"));
+                    boolean personalSender = !sender.isEmpty();
+                    Object senderIcon = null;
                     if (Build.VERSION.SDK_INT >= 28) {
-                        Object person = message.getParcelable("sender_person");
-                        if (person instanceof android.app.Person) sender = value(((android.app.Person) person).getName());
+                        try {
+                            Object person = message.getParcelable("sender_person");
+                            if (person instanceof android.app.Person) {
+                                android.app.Person senderPerson = (android.app.Person) person;
+                                String personName = value(senderPerson.getName());
+                                if (!personName.isEmpty()) {
+                                    sender = personName;
+                                    personalSender = true;
+                                }
+                                if (personalSender) senderIcon = senderPerson.getIcon();
+                            }
+                        } catch (RuntimeException ignored) {
+                            // A malformed sender parcel must not discard otherwise valid messages.
+                        }
                     }
-                    if (sender.isEmpty()) sender = title;
+                    if (sender.isEmpty()) {
+                        sender = title;
+                        personalSender = false;
+                    }
+                    if (personalSender) messageSenders.add(sender);
+                    else allMessagesHavePersonalSender = false;
                     long time = message.getLong("time", postedAt);
                     String base = stableId(sbn.getKey(), time, sender, body);
                     int occurrence = occurrences.getOrDefault(base, 0);
@@ -120,9 +144,13 @@ public class TelegramNotificationListener extends NotificationListenerService {
                             supported && uri != null ? "loading" : kind.isEmpty() ? "" : "unavailable");
                     items.add(item);
                     if (supported && uri != null) attachments.add(new Attachment(item, uri, mime, null));
+                    if (senderIcon != null) avatars.add(new AvatarAttachment(item, senderIcon));
                 }
             }
-        } catch (RuntimeException ignored) { /* Keep any valid messages, then use standard text if necessary. */ }
+        } catch (RuntimeException ignored) {
+            messagingParseFailed = true;
+            /* Keep any valid messages, then use standard text if necessary. */
+        }
 
         if (summaryHasMessages && items.isEmpty()) return;
 
@@ -150,16 +178,51 @@ public class TelegramNotificationListener extends NotificationListenerService {
             items.set(latest, item);
             attachments.add(new Attachment(item, null, "image/jpeg", picture));
         }
+        Object largeIcon = directLargeIcon(notification, extras, conversation, subText, isSummary,
+                allMessagesHavePersonalSender, messagingParseFailed, messageSenders, attachments, picture);
+        if (largeIcon != null && avatars.isEmpty()) {
+            for (FeedItem item : items) avatars.add(new AvatarAttachment(item, largeIcon));
+        }
         if (items.isEmpty()) return;
         if (privateSummary) FeedStore.addSummaryLines(this, sbn.getKey(), items);
         else FeedStore.add(this, items);
         notifyFeedChanged();
         for (Attachment attachment : attachments) load(attachment);
+        for (AvatarAttachment avatar : avatars) loadAvatar(avatar);
     }
 
     private static boolean isPrivateSummary(StatusBarNotification sbn) {
         return "org.thunderdog.challegram".equals(sbn.getPackageName())
                 && sbn.getTag() != null && sbn.getTag().startsWith("pm_");
+    }
+
+    private static Object directLargeIcon(Notification notification, Bundle extras,
+                                          String conversation, String subText, boolean isSummary,
+                                          boolean allMessagesHavePersonalSender,
+                                          boolean messagingParseFailed,
+                                          Set<String> messageSenders,
+                                          List<Attachment> attachments, Object picture) {
+        if (Build.VERSION.SDK_INT < 28 || isSummary || !attachments.isEmpty() || picture != null
+                || !allMessagesHavePersonalSender || messagingParseFailed || messageSenders.size() != 1) return null;
+        try {
+            boolean hasGroupFlag = extras.containsKey(Notification.EXTRA_IS_GROUP_CONVERSATION);
+            if (hasGroupFlag && extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION)) return null;
+            String identity = messageSenders.iterator().next();
+            if ((!conversation.isEmpty() && !identity.equals(conversation))
+                    || (!subText.isEmpty() && !identity.equals(subText))) return null;
+            boolean identityLabel = identity.equals(conversation) || identity.equals(subText);
+            if (!identityLabel && !hasGroupFlag) return null;
+
+            Icon icon = notification.getLargeIcon();
+            if (icon != null) {
+                return icon.getType() == Icon.TYPE_BITMAP || icon.getType() == Icon.TYPE_ADAPTIVE_BITMAP
+                        ? icon : null;
+            }
+            Object raw = extras.get("android.largeIcon");
+            return raw instanceof Bitmap ? raw : null;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private void capturePrivateSummary(StatusBarNotification sbn, Notification notification) {
@@ -203,7 +266,7 @@ public class TelegramNotificationListener extends NotificationListenerService {
         for (FeedItem stored : FeedStore.read(this)) {
             if (stored.id.equals(attachment.item.id) && MediaCache.file(this, stored.mediaFile) != null) return;
         }
-        if (!pending.add(attachment.item.id)) return;
+        if (!pendingMedia.add(attachment.item.id)) return;
         try {
             mediaExecutor.execute(() -> {
                 String file = "";
@@ -221,19 +284,50 @@ public class TelegramNotificationListener extends NotificationListenerService {
                     if (FeedStore.updateMedia(this, attachment.item.id, attachment.item.mediaKind, "", "unavailable")) notifyFeedChanged();
                 } finally {
                     if (attachment.picture instanceof Icon && picture != null) picture.recycle();
-                    pending.remove(attachment.item.id);
+                    pendingMedia.remove(attachment.item.id);
                 }
             });
-        } catch (RejectedExecutionException ignored) { pending.remove(attachment.item.id); }
+        } catch (RejectedExecutionException ignored) { pendingMedia.remove(attachment.item.id); }
+    }
+
+    private void loadAvatar(AvatarAttachment attachment) {
+        for (FeedItem stored : FeedStore.read(this)) {
+            if (stored.id.equals(attachment.item.id) && MediaCache.file(this, stored.avatarFile) != null) return;
+        }
+        if (!pendingAvatars.add(attachment.item.id)) return;
+        try {
+            mediaExecutor.execute(() -> {
+                Bitmap picture = null;
+                String file = "";
+                try {
+                    picture = picture(attachment.icon, 256);
+                    file = MediaCache.copyAvatar(this, attachment.item.id, picture);
+                    if (FeedStore.updateAvatar(this, attachment.item.id, file)) {
+                        notifyFeedChanged();
+                    } else {
+                        FeedStore.discardAvatarIfUnreferenced(this, file);
+                    }
+                } catch (IOException | RuntimeException ignored) {
+                    // Bad or inaccessible notification icons should not affect the feed.
+                } finally {
+                    if (attachment.icon instanceof Icon && picture != null) picture.recycle();
+                    pendingAvatars.remove(attachment.item.id);
+                }
+            });
+        } catch (RejectedExecutionException ignored) { pendingAvatars.remove(attachment.item.id); }
     }
 
     private Bitmap picture(Object raw) {
+        return picture(raw, 1280);
+    }
+
+    private Bitmap picture(Object raw, int maxDimension) {
         if (raw instanceof Bitmap) return (Bitmap) raw;
         if (!(raw instanceof Icon)) return null;
         Drawable drawable = ((Icon) raw).loadDrawable(this);
         if (drawable == null) return null;
         int width = Math.max(1, drawable.getIntrinsicWidth()), height = Math.max(1, drawable.getIntrinsicHeight());
-        float scale = Math.min(1f, 1280f / Math.max(width, height));
+        float scale = Math.min(1f, (float) maxDimension / Math.max(width, height));
         Bitmap bitmap = Bitmap.createBitmap(Math.max(1, Math.round(width * scale)),
                 Math.max(1, Math.round(height * scale)), Bitmap.Config.ARGB_8888);
         drawable.setBounds(0, 0, bitmap.getWidth(), bitmap.getHeight());
@@ -276,6 +370,14 @@ public class TelegramNotificationListener extends NotificationListenerService {
         final Object picture;
         Attachment(FeedItem item, Uri uri, String mime, Object picture) {
             this.item = item; this.uri = uri; this.mime = mime; this.picture = picture;
+        }
+    }
+
+    private static final class AvatarAttachment {
+        final FeedItem item;
+        final Object icon;
+        AvatarAttachment(FeedItem item, Object icon) {
+            this.item = item; this.icon = icon;
         }
     }
 }

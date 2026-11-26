@@ -5,7 +5,7 @@
 | Файл | Метод в `DesignScreenshotTest` | Данные |
 | --- | --- | --- |
 | `images/feed-portrait.png` | `capturesPortraitFeed` | Шесть вымышленных сообщений: релиз, созвоны и семейный техсовет |
-| `images/feed-landscape.png` | `capturesLandscapeFeedInChronologicalSingleColumn` | Те же вымышленные сообщения, одна колонка |
+| `images/feed-landscape.png` | `capturesLandscapeFeedInChronologicalSingleColumn` | Семь вымышленных сообщений, сгенерированные аватары и миниатюра фотографии |
 | `images/media-portrait.png` | `capturesPhotoAndVideoPreviewInDarkPanel` | Вымышленное оповещение и публичная фотография CC0 |
 | `images/video-unavailable.png` | `capturesVideoWithoutPreview` | Искусственное уведомление без видеопревью |
 

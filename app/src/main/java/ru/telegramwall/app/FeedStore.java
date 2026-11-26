@@ -72,7 +72,12 @@ final class FeedStore {
                 if (existing.id.equals(candidate.id)) {
                     duplicate = true;
                     if (candidate.id.startsWith("summary:") && !existing.message.equals(candidate.message)) {
-                        all.set(index, candidate);
+                        all.set(index, withAvatar(candidate,
+                                candidate.avatarFile.isEmpty() ? existing.avatarFile : candidate.avatarFile));
+                        changed = true;
+                    } else if (!candidate.avatarFile.isEmpty()
+                            && !candidate.avatarFile.equals(existing.avatarFile)) {
+                        all.set(index, withAvatar(existing, candidate.avatarFile));
                         changed = true;
                     }
                     break;
@@ -134,12 +139,41 @@ final class FeedStore {
             if (!old.id.equals(id)) continue;
             if (file.isEmpty() && MediaCache.file(context, old.mediaFile) != null) return false;
             all.set(i, new FeedItem(old.id, old.sender, old.chat, old.message, old.time,
-                    kind, file, state));
+                    kind, file, state, old.avatarFile));
             save(context, all);
             MediaCache.prune(context, all);
             return true;
         }
         return false; // A completed background load must not restore cleared or expired cards.
+    }
+
+    static synchronized boolean updateAvatar(Context context, String id, String file) {
+        List<FeedItem> all = read(context);
+        String next = file == null ? "" : file;
+        for (int i = 0; i < all.size(); i++) {
+            FeedItem old = all.get(i);
+            if (!old.id.equals(id)) continue;
+            if (next.isEmpty()) return false;
+            all.set(i, withAvatar(old, next));
+            save(context, all);
+            MediaCache.prune(context, all);
+            return true;
+        }
+        return false; // A completed background load must not restore cleared or expired cards.
+    }
+
+    static synchronized void discardAvatarIfUnreferenced(Context context, String file) {
+        if (file == null || file.isEmpty()) return;
+        for (FeedItem item : read(context)) {
+            if (file.equals(item.avatarFile)) return;
+        }
+        java.io.File orphan = MediaCache.file(context, file);
+        if (orphan != null) orphan.delete();
+    }
+
+    private static FeedItem withAvatar(FeedItem item, String avatarFile) {
+        return new FeedItem(item.id, item.sender, item.chat, item.message, item.time,
+                item.mediaKind, item.mediaFile, item.mediaState, avatarFile);
     }
 
     private static void save(Context context, List<FeedItem> items) {

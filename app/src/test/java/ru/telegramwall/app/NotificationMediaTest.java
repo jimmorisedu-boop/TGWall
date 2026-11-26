@@ -106,6 +106,94 @@ public class NotificationMediaTest {
         assertEquals("", FeedStore.read(context).get(0).mediaKind);
     }
 
+    @Test public void messagingSenderPersonIconBecomesASeparateBoundedAvatar() throws Exception {
+        Bitmap source = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888);
+        android.app.Person person = new android.app.Person.Builder().setName("Alice")
+                .setIcon(android.graphics.drawable.Icon.createWithBitmap(source)).build();
+        Notification.MessagingStyle.Message message = new Notification.MessagingStyle.Message(
+                "Привет", 1000, person);
+        Notification notification = new Notification.Builder(context, "test")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setStyle(new Notification.MessagingStyle("Me").setConversationTitle("Team").addMessage(message))
+                .build();
+        listener.onNotificationPosted(status(notification));
+        finishCopies();
+        FeedItem item = FeedStore.read(context).get(0);
+        assertEquals("Alice", item.sender);
+        assertFalse(item.avatarFile.isEmpty());
+        assertTrue(item.avatarFile.startsWith("avatar-"));
+        assertNotNull(MediaCache.file(context, item.avatarFile));
+        assertEquals("", item.mediaFile);
+        Bitmap cached = BitmapFactory.decodeFile(MediaCache.file(context, item.avatarFile).getAbsolutePath());
+        assertNotNull(cached);
+        assertTrue(Math.max(cached.getWidth(), cached.getHeight()) <= 256);
+        cached.recycle();
+        FeedStore.clear(context);
+        assertNull(MediaCache.file(context, item.avatarFile));
+    }
+
+    @Test public void directMessagingLargeIconIsUsedOnlyForAnExplicitSingleSender() throws Exception {
+        Bitmap avatar = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888);
+        Notification.MessagingStyle style = new Notification.MessagingStyle("Me")
+                .setConversationTitle("Alice").setGroupConversation(false)
+                .addMessage(new Notification.MessagingStyle.Message("Привет", 1000, "Alice"));
+        Notification notification = new Notification.Builder(context, "test")
+                .setSmallIcon(android.R.drawable.ic_dialog_info).setLargeIcon(avatar).setStyle(style).build();
+        listener.onNotificationPosted(status(notification));
+        finishCopies();
+        FeedItem item = FeedStore.read(context).get(0);
+        assertFalse(item.avatarFile.isEmpty());
+        assertNotNull(MediaCache.file(context, item.avatarFile));
+    }
+
+    @Test public void repostAfterAvatarEvictionRecreatesTheReferencedDeterministicFile() throws Exception {
+        Bitmap source = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
+        android.app.Person person = new android.app.Person.Builder().setName("Alice")
+                .setIcon(android.graphics.drawable.Icon.createWithBitmap(source)).build();
+        Notification notification = new Notification.Builder(context, "test")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setStyle(new Notification.MessagingStyle("Me").setConversationTitle("Team")
+                        .addMessage(new Notification.MessagingStyle.Message("Привет", 1000, person)))
+                .build();
+        listener.onNotificationPosted(status(notification));
+        finishCopies();
+        String fileName = FeedStore.read(context).get(0).avatarFile;
+        assertFalse(fileName.isEmpty());
+        File evicted = MediaCache.file(context, fileName);
+        assertNotNull(evicted);
+        assertTrue(evicted.delete());
+        listener.onNotificationPosted(status(notification));
+        finishCopies();
+        assertEquals(fileName, FeedStore.read(context).get(0).avatarFile);
+        assertNotNull(MediaCache.file(context, fileName));
+    }
+
+    @Test public void groupMessagingLargeIconIsNotAttributedToItsSender() throws Exception {
+        Bitmap avatar = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888);
+        Notification.MessagingStyle style = new Notification.MessagingStyle("Me")
+                .setConversationTitle("Team").setGroupConversation(true)
+                .addMessage(new Notification.MessagingStyle.Message("Привет", 1000, "Alice"));
+        Notification notification = new Notification.Builder(context, "test")
+                .setSmallIcon(android.R.drawable.ic_dialog_info).setLargeIcon(avatar).setStyle(style).build();
+        listener.onNotificationPosted(status(notification));
+        finishCopies();
+        FeedItem item = FeedStore.read(context).get(0);
+        assertEquals("", item.avatarFile);
+    }
+
+    @Test public void directMessagingResourceLargeIconIsNotTreatedAsAPersonalAvatar() throws Exception {
+        Notification.MessagingStyle style = new Notification.MessagingStyle("Me")
+                .setConversationTitle("Alice").setGroupConversation(false)
+                .addMessage(new Notification.MessagingStyle.Message("Привет", 1000, "Alice"));
+        Notification notification = new Notification.Builder(context, "test")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setLargeIcon(android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.ic_dialog_info))
+                .setStyle(style).build();
+        listener.onNotificationPosted(status(notification));
+        finishCopies();
+        assertEquals("", FeedStore.read(context).get(0).avatarFile);
+    }
+
     @Test public void completedLoadCannotResurrectClearedHistory() throws Exception {
         String file = MediaCache.copy(context, "cleared", register("cleared", "/notification-photo.jpg"), "image/jpeg", null);
         FeedStore.add(context, Collections.singletonList(new FeedItem("cleared", "Alice", "Team", "Фото", 1,
@@ -122,8 +210,10 @@ public class NotificationMediaTest {
         assertEquals(item.mediaFile, restored.mediaFile);
         assertEquals(item.mediaKind, restored.mediaKind);
         assertEquals(item.mediaState, restored.mediaState);
+        assertEquals("", restored.avatarFile);
         org.json.JSONObject old = new org.json.JSONObject("{\"id\":\"old\",\"sender\":\"Alice\",\"message\":\"Text\",\"time\":1}");
         assertEquals("", FeedItem.fromJson(old).mediaKind);
+        assertEquals("", FeedItem.fromJson(old).avatarFile);
     }
 
     @Test public void quotaEvictsOldMediaAndUnsafePathsAreRejected() throws Exception {

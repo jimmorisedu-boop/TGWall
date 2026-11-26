@@ -6,8 +6,9 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.provider.Settings;
 import android.view.View;
 import android.view.ViewGroup;
@@ -28,8 +29,14 @@ import org.robolectric.shadows.ShadowPopupMenu;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 33, qualifiers = "w390dp-h844dp-port-mdpi")
@@ -84,15 +91,84 @@ public class DesignScreenshotTest {
 
     @Test @Config(qualifiers = "w844dp-h390dp-land-mdpi")
     public void capturesLandscapeFeedInChronologicalSingleColumn() throws Exception {
-        fixture();
+        landscapeFixture();
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
             capture(controller.get(), "landscape", 844, 390);
             GridView grid = TestUi.grid(controller.get());
             assertEquals(1, grid.getNumColumns());
+            assertEquals(7, grid.getCount());
+            assertTrue("Five complete messages should still fit in the panel",
+                    grid.getChildCount() >= 5 && grid.getChildAt(4).getBottom() <= grid.getHeight());
+            assertLandscapePreviewSpacing(grid);
             assertEquals("Оля", ((FeedItem) grid.getAdapter().getItem(0)).sender);
             assertEquals("Паша", ((FeedItem) grid.getAdapter().getItem(1)).sender);
             View header = ((ViewGroup) content(controller.get())).getChildAt(2);
             assertTrue("Feed must start below the toolbar", grid.getTop() >= header.getBottom());
+
+            findText(header, "⋮").performClick();
+            PopupMenu menu = ShadowPopupMenu.getLatestPopupMenu();
+            assertTrue(menu.getMenu().performIdentifierAction(5, 0));
+            menu.dismiss();
+            TestUi.layout(controller.get(), 844, 390);
+            assertLandscapePreviewSpacing(grid);
+        }
+    }
+
+    private void assertLandscapePreviewSpacing(GridView grid) {
+        ViewGroup row = (ViewGroup) grid.getChildAt(3);
+        TextView message = findText(row, ((FeedItem) grid.getItemAtPosition(3)).message);
+        assertNotNull(message);
+        assertEquals(2, message.getLineCount());
+        assertTrue("Both lines must be visible", message.getHeight() >= message.getLayout().getHeight());
+        Rect bounds = new Rect(0, 0, message.getWidth(), message.getHeight());
+        row.offsetDescendantRectToMyCoords(message, bounds);
+        // This fixture uses mdpi, so the measured pixel distances equal dp.
+        assertTrue("Leave space around wrapped text", bounds.top >= 8 && row.getHeight() - bounds.bottom >= 8);
+        assertTrue("Short messages should use less space", grid.getChildAt(0).getHeight() < row.getHeight());
+    }
+
+    @Test @Config(qualifiers = "w640dp-h360dp-land-mdpi")
+    public void narrowLandscapeKeepsPreviewTimeAndScaledTextLegible() throws Exception {
+        FeedItem item = new FeedItem("preview:scaled", "Мария", "Группа",
+                "Сообщение с длинным текстом, который переносится на следующую строку.", DEMO_TIME);
+        FeedItem older = new FeedItem("preview:yesterday", "Оля", "Группа", "До завтра.", DEMO_TIME - 86400000L);
+        FeedStore.add(context, Arrays.asList(item, older));
+        float previousScale = RuntimeEnvironment.getFontScale();
+        RuntimeEnvironment.setFontScale(2f);
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
+            TestUi.layout(controller.get(), 640, 360);
+            View row = TestUi.grid(controller.get()).getChildAt(0);
+            String clock = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(DEMO_TIME));
+            TextView time = findText(row, "≈" + clock);
+            assertNotNull(time);
+            assertEquals(1, time.getLineCount());
+            assertTrue("Show the entire approximate time", time.getPaint().measureText(time.getText().toString())
+                    <= time.getWidth() - time.getCompoundPaddingLeft() - time.getCompoundPaddingRight());
+            TextView message = findText(row, item.message);
+            assertEquals(2, message.getLineCount());
+            assertTrue("Keep both scaled lines visible", message.getHeight() >= message.getLayout().getHeight());
+            String dateAndTime = new SimpleDateFormat("dd.MM\nHH:mm", Locale.getDefault()).format(new Date(older.time));
+            TextView olderTime = findText(TestUi.grid(controller.get()).getChildAt(1), "≈" + dateAndTime);
+            assertNotNull(olderTime);
+            assertEquals(2, olderTime.getLineCount());
+            assertTrue(olderTime.getHeight() >= olderTime.getLayout().getHeight());
+        } finally {
+            RuntimeEnvironment.setFontScale(previousScale);
+        }
+    }
+
+    @Test @Config(qualifiers = "w844dp-h390dp-land-mdpi")
+    public void landscapeTapOpensFullMessageAndAttachmentDetails() throws Exception {
+        landscapeFixture();
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
+            MainActivity activity = controller.get();
+            TestUi.layout(activity, 844, 390);
+            GridView grid = TestUi.grid(activity);
+            assertTrue(grid.performItemClick(grid.getChildAt(0), 0, 0));
+            android.app.AlertDialog dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
+            assertNotNull(dialog);
+            assertNotNull(findText(dialog.getWindow().getDecorView(), "Пуши приходят сами. Хоть кто-то в проекте работает."));
+            dialog.dismiss();
         }
     }
 
@@ -106,6 +182,8 @@ public class DesignScreenshotTest {
             assertNotNull(menu.getMenu().findItem(1));
             assertNotNull(menu.getMenu().findItem(2));
             assertNotNull(menu.getMenu().findItem(3));
+            assertNotNull(menu.getMenu().findItem(4));
+            assertNotNull(menu.getMenu().findItem(5));
             menu.dismiss();
         }
     }
@@ -235,11 +313,67 @@ public class DesignScreenshotTest {
                 {"Мама", "Семейный техсовет", "Перезагрузила. Роутер ожил, я пока нет."},
                 {"Костя", "Семейный техсовет", "Мам, перезагрузи роутер. Ему тоже нужен отпуск."}
         };
+        Map<String, String> avatars = avatarFiles();
         List<FeedItem> items = new ArrayList<>();
         for (int i = 0; i < messages.length; i++) {
-            items.add(new FeedItem("sample" + i, messages[i][0], messages[i][1], messages[i][2], now - i * 180000));
+            items.add(new FeedItem("sample" + i, messages[i][0], messages[i][1], messages[i][2], now - i * 180000,
+                    "", "", "", avatars.get(messages[i][0])));
         }
         FeedStore.add(context, items);
+    }
+
+    private void landscapeFixture() throws Exception {
+        Settings.Secure.putString(context.getContentResolver(), "enabled_notification_listeners",
+                new ComponentName(context, TelegramNotificationListener.class).flattenToShortString());
+        FeedStore.clear(context);
+        Map<String, String> avatars = avatarFiles();
+        long now = DEMO_TIME;
+        List<FeedItem> items = new ArrayList<>();
+        String[][] messages = {
+                {"Оля", "Релиз без паники", "Пуши приходят сами. Хоть кто-то в проекте работает."},
+                {"Паша", "Релиз без паники", "Всё настроил. Теперь героически смотрю на экран."},
+                {"Нина", "Созвон о созвоне", "Отменила созвон. Команда впервые успела поработать."},
+                {"Борис", "Созвон о созвоне", "Нужен созвон. Обсудим, почему не успеваем. Список предыдущих созвонов уже в календаре."},
+                {"Кот Иннокентий", "Диванные эксперты", "Съездил отдохнуть. Горы на созвон не вышли."},
+                {"Мама", "Семейный техсовет", "Перезагрузила. Роутер ожил, я пока нет."},
+                {"Костя", "Семейный техсовет", "Мам, перезагрузи роутер. Ему тоже нужен отпуск."}
+        };
+        Bitmap picture;
+        try (InputStream input = getClass().getResourceAsStream("/notification-photo.jpg")) {
+            picture = BitmapFactory.decodeStream(input);
+        }
+        String photo = MediaCache.copy(context, "landscape-photo", null, "image/jpeg", picture);
+        picture.recycle();
+        for (int i = 0; i < messages.length; i++) {
+            String media = i == 4 ? photo : "";
+            items.add(new FeedItem("landscape" + i, messages[i][0], messages[i][1], messages[i][2], now - i * 180000,
+                    media.isEmpty() ? "" : "image", media, media.isEmpty() ? "" : "ready", avatars.get(messages[i][0])));
+        }
+        FeedStore.add(context, items);
+    }
+
+    private Map<String, String> avatarFiles() {
+        Map<String, String> result = new HashMap<>();
+        String[] names = {"Оля", "Паша", "Нина", "Борис", "Кот Иннокентий", "Мама", "Костя"};
+        try (InputStream input = getClass().getResourceAsStream("/demo-avatars.jpg")) {
+            Bitmap atlas = BitmapFactory.decodeStream(input);
+            assertNotNull(atlas);
+            int cell = atlas.getWidth() / 3;
+            for (int i = 0; i < names.length; i++) {
+                Bitmap crop = Bitmap.createBitmap(atlas, (i % 3) * cell, (i / 3) * cell, cell, cell);
+                try {
+                    result.put(names[i], MediaCache.copyAvatar(context, names[i], crop));
+                } catch (Exception error) {
+                    throw new AssertionError(error);
+                } finally {
+                    crop.recycle();
+                }
+            }
+            atlas.recycle();
+        } catch (Exception error) {
+            throw new AssertionError(error);
+        }
+        return result;
     }
 
     private View content(MainActivity activity) {

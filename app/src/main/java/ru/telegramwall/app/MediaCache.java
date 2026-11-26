@@ -11,6 +11,7 @@ import java.util.*;
 final class MediaCache {
     private static final long MAX_SOURCE = 24L * 1024 * 1024;
     private static final long MAX_CACHE = 96L * 1024 * 1024;
+    private static final int MAX_AVATAR_DIMENSION = 256;
     private MediaCache() {}
 
     static File directory(Context context) {
@@ -20,7 +21,7 @@ final class MediaCache {
     }
 
     static File file(Context context, String name) {
-        if (name == null || !name.matches("[a-f0-9-]+\\.(jpg|png|video)")) return null;
+        if (name == null || !name.matches("(?:[a-f0-9-]+\\.(?:jpg|png|video)|avatar-[a-f0-9-]+\\.(?:jpg|png))")) return null;
         File file = new File(directory(context), name);
         return file.isFile() && file.length() > 0 ? file : null;
     }
@@ -79,19 +80,33 @@ final class MediaCache {
     }
 
     private static String saveBitmap(Context context, String key, Bitmap bitmap) throws IOException {
+        return saveBitmap(context, key, bitmap, 1280, "");
+    }
+
+    static String copyAvatar(Context context, String id, Bitmap picture) throws IOException {
+        if (picture == null) throw new IOException("No avatar image");
+        String key = UUID.nameUUIDFromBytes(("avatar:" + id)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        return saveBitmap(context, key, picture, MAX_AVATAR_DIMENSION, "avatar-");
+    }
+
+    private static String saveBitmap(Context context, String key, Bitmap bitmap,
+                                     int maxDimension, String prefix) throws IOException {
         if (bitmap.isRecycled()) throw new IOException("Image no longer available");
-        float scale = Math.min(1f, 1280f / Math.max(bitmap.getWidth(), bitmap.getHeight()));
+        if (bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) throw new IOException("Invalid image size");
+        float scale = Math.min(1f, (float) maxDimension / Math.max(bitmap.getWidth(), bitmap.getHeight()));
         Bitmap bounded = scale < 1f ? Bitmap.createScaledBitmap(bitmap,
                 Math.max(1, Math.round(bitmap.getWidth() * scale)), Math.max(1, Math.round(bitmap.getHeight() * scale)), true) : bitmap;
         String extension = bounded.hasAlpha() ? ".png" : ".jpg";
-        File target = new File(directory(context), key + extension);
-        File pending = new File(directory(context), key + ".image.part");
+        File target = new File(directory(context), prefix + key + extension);
+        File pending = new File(directory(context), prefix + key + ".image.part");
         try {
             try (OutputStream output = new FileOutputStream(pending)) {
                 if (!bounded.compress(bounded.hasAlpha() ? Bitmap.CompressFormat.PNG : Bitmap.CompressFormat.JPEG, 85, output)) {
                     throw new IOException("Cannot save image");
                 }
             }
+            if (target.exists() && !target.delete()) throw new IOException("Cannot replace image");
             if (!pending.renameTo(target)) throw new IOException("Cannot commit image");
             return target.getName();
         } finally {
@@ -104,6 +119,7 @@ final class MediaCache {
         Set<String> referenced = new HashSet<>();
         for (FeedItem item : items) {
             referenced.add(item.mediaFile);
+            referenced.add(item.avatarFile);
             if (item.mediaFile.endsWith(".video")) {
                 String key = item.mediaFile.substring(0, item.mediaFile.length() - 6);
                 referenced.add(key + ".jpg");
